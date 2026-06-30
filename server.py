@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Serveur local pour Inference Console.
 
-- Sert l'interface (index.html).
+- Sert le front React compile (dossier dist/, genere par `npm run build`).
 - Expose la configuration (URLs des backends) lue depuis config.json.
 - Proxifie les requetes vers les serveurs d'inference (evite les soucis CORS).
 
@@ -10,11 +10,16 @@ Aucune dependance externe : uniquement la librairie standard Python.
 Usage:
     python3 server.py [--config config.json] [--host HOST] [--port PORT]
 
+En developpement, lancez plutot le serveur Vite (`npm run dev`) qui proxifie
+/api/config et /proxy vers ce serveur. En production, `npm run build` puis
+`python3 server.py` sert tout depuis dist/.
+
 Pour changer les URLs des backends, editez simplement config.json.
 """
 
 import argparse
 import json
+import mimetypes
 import os
 import sys
 import urllib.error
@@ -23,7 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG = os.path.join(HERE, "config.json")
-INDEX_FILE = os.path.join(HERE, "index.html")
+DIST_DIR = os.path.join(HERE, "dist")
 
 # Hop-by-hop headers a ne pas recopier lors du proxy.
 HOP_BY_HOP = {
@@ -43,6 +48,9 @@ class Handler(BaseHTTPRequestHandler):
     config_path = DEFAULT_CONFIG
 
     server_version = "InferenceConsole/1.0"
+    # HTTP/1.1 : indispensable pour que le navigateur interprete le
+    # Transfer-Encoding: chunked du proxy en streaming.
+    protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
@@ -69,6 +77,30 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _serve_static(self, path):
+        """Sert un fichier depuis dist/ (avec repli SPA sur index.html)."""
+        if not os.path.isdir(DIST_DIR):
+            self._send_json(
+                {"error": "dist/ introuvable — lancez `npm install` puis `npm run build`, "
+                          "ou utilisez `npm run dev` en developpement."},
+                status=503,
+            )
+            return
+
+        rel = path.lstrip("/") or "index.html"
+        full = os.path.normpath(os.path.join(DIST_DIR, rel))
+        # Empeche toute traversee hors de dist/.
+        if not full.startswith(DIST_DIR + os.sep) and full != DIST_DIR:
+            self.send_error(403, "Interdit")
+            return
+        if not os.path.isfile(full):
+            full = os.path.join(DIST_DIR, "index.html")  # repli SPA
+
+        ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
+        if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
+            ctype += "; charset=utf-8"
+        self._send_file(full, ctype)
 
     def _public_config(self):
         """Config exposee au navigateur (sans details serveur)."""
@@ -107,13 +139,15 @@ class Handler(BaseHTTPRequestHandler):
         try:
             upstream = urllib.request.urlopen(req, timeout=600)
         except urllib.error.HTTPError as err:
+            body = err.read()
             self.send_response(err.code)
             for key, val in err.headers.items():
                 if key.lower() not in HOP_BY_HOP:
                     self.send_header(key, val)
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             try:
-                self.wfile.write(err.read())
+                self.wfile.write(body)
             except OSError:
                 pass
             return
@@ -147,14 +181,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
-        if path == "/" or path == "/index.html":
-            self._send_file(INDEX_FILE, "text/html; charset=utf-8")
-        elif path == "/api/config":
+        if path == "/api/config":
             self._send_json(self._public_config())
         elif path.startswith("/proxy/"):
             self._proxy("GET")
         else:
-            self.send_error(404, "Introuvable")
+            self._serve_static(path)
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
@@ -195,6 +227,8 @@ def main():
     for name, url in config.get("backends", {}).items():
         print("  - %-8s %s" % (name, url))
     print("Config : %s  (editez-le pour changer les URLs)" % args.config)
+    if not os.path.isdir(DIST_DIR):
+        print("/!\\ dist/ absent : lancez `npm run build` (prod) ou `npm run dev` (dev).")
     print("Ctrl+C pour arreter.")
     try:
         httpd.serve_forever()

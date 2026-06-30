@@ -1,27 +1,48 @@
 # hackathon_ia_console
 
-Console web pour tester des modèles d'inférence (Ollama ou serveurs compatibles
-OpenAI), servie par un petit serveur local **sans dépendance** (Python stdlib).
+Console web (**React + Vite**) pour tester des modèles d'inférence (Ollama ou
+serveurs compatibles OpenAI). Le front est servi/secondé par un petit serveur
+local **sans dépendance** (Python stdlib) qui lit les URLs des backends dans un
+fichier de configuration et **proxifie** les requêtes (plus de souci CORS).
 
-L'interface conserve le style de la console d'origine ; les URLs des backends
-sont désormais définies dans un fichier de configuration, et le serveur
-**proxifie** les requêtes vers les backends (plus de souci CORS).
+Le style de l'interface est inchangé.
 
-## Lancer
+## Prérequis
+
+- Node.js 18+ (pour le front Vite)
+- Python 3.8+ (pour le serveur / proxy)
+
+## Développement
+
+Deux processus :
 
 ```bash
+# 1) backend : config + proxy d'inférence (port 8080)
 python3 server.py
+
+# 2) front : serveur de dev Vite avec HMR (port 5173)
+npm install
+npm run dev
 ```
 
-Puis ouvrir <http://127.0.0.1:8080>.
+Ouvrir <http://localhost:5173>. Vite proxifie automatiquement `/api/config` et
+`/proxy/*` vers `server.py`.
 
-Options :
+## Production
+
+```bash
+npm install
+npm run build        # génère dist/
+python3 server.py    # sert dist/ + config + proxy sur le port 8080
+```
+
+Ouvrir <http://127.0.0.1:8080>.
+
+Options serveur :
 
 ```bash
 python3 server.py --config config.json --host 0.0.0.0 --port 9000
 ```
-
-`--host` / `--port` surchargent les valeurs du fichier de config.
 
 ## Configuration — `config.json`
 
@@ -40,24 +61,34 @@ python3 server.py --config config.json --host 0.0.0.0 --port 9000
 
 - **`backends`** : les URLs à modifier pour pointer vers vos serveurs
   d'inférence. Changez-les ici puis relancez `server.py`.
-- **`defaults`** : valeurs initiales de l'interface (mode, modèle, prompt
-  système, température, tokens max). Les réglages choisis dans l'UI sont ensuite
-  mémorisés côté navigateur (localStorage).
+- **`defaults`** : valeurs initiales de l'interface. Les réglages choisis dans
+  l'UI sont ensuite mémorisés côté navigateur (localStorage).
 
-## Fonctionnement
+## Fonctionnement du serveur
 
-- `GET /` → l'interface (`index.html`).
-- `GET /api/config` → la config publique (backends + defaults).
-- `GET|POST /proxy/<backend>/<chemin>` → relaie vers `backends[<backend>]`
-  en streaming. L'UI parle uniquement à ce proxy, jamais directement au backend.
+- `GET /api/config` → config publique (backends + defaults).
+- `GET|POST /proxy/<backend>/<chemin>` → relaie en streaming vers
+  `backends[<backend>]`. L'UI parle uniquement à ce proxy.
+- Tout le reste → fichiers statiques de `dist/` (avec repli SPA).
 
-En mode Ollama, l'UI appelle `/api/generate` (le format
+En mode Ollama, l'UI appelle `/api/generate` (format
 `{"model": "...", "prompt": "..."}`) et `/api/tags` pour lister les modèles.
-L'historique de conversation est reconstruit dans le `prompt`, et le prompt
-système est passé via le champ `system`.
+L'historique est reconstruit dans le `prompt`, le prompt système via le champ
+`system`.
 
-## Fichiers
+## Structure
 
-- `server.py` — serveur local + proxy (Python standard library uniquement).
-- `index.html` — interface de la console.
-- `config.json` — URLs des backends et valeurs par défaut.
+```
+server.py              serveur local : config + proxy + service de dist/
+config.json            URLs des backends et valeurs par défaut
+index.html             template Vite (point d'entrée)
+vite.config.js         config Vite (proxy dev vers server.py)
+src/
+  main.jsx             bootstrap React
+  App.jsx              état + logique de chat / streaming
+  styles.css           styles (identiques à la console d'origine)
+  lib/
+    api.js             requêtes backends (config, modèles, génération)
+    markdown.js        rendu Markdown minimal
+  components/          Header, Feed, Composer, StatusBar, ConfigDrawer
+```
