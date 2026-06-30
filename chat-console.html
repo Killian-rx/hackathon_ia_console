@@ -226,7 +226,7 @@
 
     <div class="field">
       <label>URL de base</label>
-      <input type="url" id="baseUrl" placeholder="http://localhost:11434" spellcheck="false" autocapitalize="off">
+      <input type="url" id="baseUrl" placeholder="http://10.2.117.10:8080" spellcheck="false" autocapitalize="off">
     </div>
 
     <div class="field">
@@ -271,8 +271,8 @@
 (() => {
   "use strict";
 
-  const LS = "inference-console-cfg-v1";
-  const defaults = { mode: "ollama", baseUrl: "http://localhost:11434", model: "", system: "", temp: 0.7, maxTok: 2048 };
+  const LS = "inference-console-cfg-v2";
+  const defaults = { mode: "ollama", baseUrl: "http://10.2.117.10:8080", model: "", system: "", temp: 0.7, maxTok: 2048 };
   let cfg = Object.assign({}, defaults, load());
   let messages = [];
   let controller = null;
