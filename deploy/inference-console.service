@@ -7,10 +7,9 @@ Type=simple
 # Adapte WorkingDirectory au chemin de déploiement sur la VM.
 WorkingDirectory=/opt/hackathon_ia_console
 ExecStart=/usr/bin/python3 /opt/hackathon_ia_console/server.py
-# Variables : décommente/adapte selon le besoin.
-# Derrière un reverse-proxy local (Nginx), binder 127.0.0.1 : la console
-# n'est alors joignable que via le proxy, pas exposée en direct.
-Environment=HOST=127.0.0.1
+# Variables : adapte le PORT à celui attendu par la passerelle klouders
+# (https://hack-ia01.klouders.fr/ -> cette VM).
+Environment=HOST=0.0.0.0
 Environment=PORT=8080
 # Proxy interne vers le backend d'inférence (évite le CORS).
 Environment=UPSTREAM=http://localhost:11434
