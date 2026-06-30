@@ -51,6 +51,11 @@ python3 server.py --config config.json --host 0.0.0.0 --port 9000
 - `GET|POST /proxy/<backend>/<chemin>` → relaie vers `backends[<backend>]`
   en streaming. L'UI parle uniquement à ce proxy, jamais directement au backend.
 
+En mode Ollama, l'UI appelle `/api/generate` (le format
+`{"model": "...", "prompt": "..."}`) et `/api/tags` pour lister les modèles.
+L'historique de conversation est reconstruit dans le `prompt`, et le prompt
+système est passé via le champ `system`.
+
 ## Fichiers
 
 - `server.py` — serveur local + proxy (Python standard library uniquement).
