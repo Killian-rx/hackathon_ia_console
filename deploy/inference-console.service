@@ -8,9 +8,12 @@ Type=simple
 WorkingDirectory=/opt/hackathon_ia_console
 ExecStart=/usr/bin/python3 /opt/hackathon_ia_console/server.py
 # Variables : décommente/adapte selon le besoin.
-Environment=HOST=0.0.0.0
+# Derrière un reverse-proxy local (Nginx), binder 127.0.0.1 : la console
+# n'est alors joignable que via le proxy, pas exposée en direct.
+Environment=HOST=127.0.0.1
 Environment=PORT=8080
-# Environment=UPSTREAM=http://localhost:11434
+# Proxy interne vers le backend d'inférence (évite le CORS).
+Environment=UPSTREAM=http://localhost:11434
 Restart=on-failure
 RestartSec=3
 # Durcissement léger.

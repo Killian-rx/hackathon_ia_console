@@ -69,8 +69,28 @@ docker run -d -p 8080:8080 inference-console
 docker run -d -p 8080:8080 -e UPSTREAM=http://host.docker.internal:11434 inference-console
 ```
 
-## Exposition HTTPS
+## Exposition via Nginx (même VM)
 
-Pour un accès web propre, place un reverse-proxy TLS (Caddy / Nginx) devant le
-port 8080, ou expose via le load-balancer de ton cloud. Le serveur lui-même
-fait du HTTP simple.
+Pour un accès web propre, on place Nginx en frontal sur la même VM. `server.py`
+écoute alors en local (`127.0.0.1:8080`) et Nginx termine le HTTP(S) public.
+
+```bash
+# server.py en local uniquement, avec proxy vers Ollama
+HOST=127.0.0.1 PORT=8080 python3 server.py --upstream http://localhost:11434
+# (ou via l'unité systemd fournie, déjà configurée pour 127.0.0.1)
+
+sudo cp deploy/nginx-console.conf /etc/nginx/sites-available/console
+sudo ln -s /etc/nginx/sites-available/console /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# HTTPS (domaine pointé sur l'IP publique de la passerelle) :
+sudo certbot --nginx -d console.ton-domaine.fr
+```
+
+⚠️ La conf Nginx active `proxy_buffering off` : **indispensable** pour que le
+streaming token-par-token de la console s'affiche en direct (sinon la réponse
+n'apparaît qu'à la fin).
+
+Dans **CONFIG** de la page, mets l'URL de base = l'URL publique de la console
+(ex. `https://console.ton-domaine.fr`) : les appels passent par Nginx puis par
+le proxy interne, donc aucun souci de CORS.
