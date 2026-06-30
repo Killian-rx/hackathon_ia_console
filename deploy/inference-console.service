@@ -1,0 +1,21 @@
+[Unit]
+Description=Inference Console (serveur web)
+After=network.target
+
+[Service]
+Type=simple
+# Adapte WorkingDirectory au chemin de déploiement sur la VM.
+WorkingDirectory=/opt/hackathon_ia_console
+ExecStart=/usr/bin/python3 /opt/hackathon_ia_console/server.py
+# Variables : décommente/adapte selon le besoin.
+Environment=HOST=0.0.0.0
+Environment=PORT=8080
+# Environment=UPSTREAM=http://localhost:11434
+Restart=on-failure
+RestartSec=3
+# Durcissement léger.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
