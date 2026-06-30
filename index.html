@@ -140,6 +140,7 @@
   input[type=text], input[type=url], select, .field textarea { width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r); color: var(--ink); padding: 9px 11px; font-family: var(--mono); font-size: 13px; outline: none; }
   .field textarea { resize: vertical; min-height: 62px; line-height: 1.5; }
   input:focus, select:focus, .field textarea:focus { border-color: var(--accent); }
+  input:read-only { color: var(--ink-soft); cursor: default; }
   input[type=range] { width: 100%; accent-color: var(--accent); }
   select { appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2354595e' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; padding-right: 30px; }
 
@@ -225,8 +226,9 @@
     </div>
 
     <div class="field">
-      <label>URL de base</label>
-      <input type="url" id="baseUrl" placeholder="http://localhost:11434" spellcheck="false" autocapitalize="off">
+      <label>URL de base <span class="val">config.json</span></label>
+      <input type="url" id="baseUrl" readonly spellcheck="false" autocapitalize="off">
+      <div class="note">Les URLs sont définies côté serveur dans <code>config.json</code>. Modifiez ce fichier puis relancez <code>server.py</code> pour les changer.</div>
     </div>
 
     <div class="field">
@@ -261,8 +263,8 @@
     <div class="divider"></div>
     <button class="btn-wide" id="clearChat">Effacer la conversation</button>
     <div class="note" style="margin-top:15px">
-      Page en <code>file://</code> ? L'origine <code>null</code> est souvent rejetée.
-      Sers-la via <code>python -m http.server</code>, ou lance Ollama avec <code>OLLAMA_ORIGINS=*</code>.
+      Servi par <code>server.py</code> en local. Les requêtes passent par un proxy
+      (<code>/proxy/…</code>) qui relaie vers les backends — plus de souci CORS.
     </div>
   </div>
 </aside>
@@ -272,7 +274,9 @@
   "use strict";
 
   const LS = "inference-console-cfg-v1";
-  const defaults = { mode: "ollama", baseUrl: "http://localhost:11434", model: "", system: "", temp: 0.7, maxTok: 2048 };
+  // Valeurs de repli si /api/config est injoignable.
+  let backends = { ollama: "http://localhost:11434", openai: "http://localhost:8000" };
+  const defaults = { mode: "ollama", model: "", system: "", temp: 0.7, maxTok: 2048 };
   let cfg = Object.assign({}, defaults, load());
   let messages = [];
   let controller = null;
@@ -281,6 +285,10 @@
   function load() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
   function save() { try { localStorage.setItem(LS, JSON.stringify(cfg)); } catch {} }
   function stamp() { return new Date().toTimeString().slice(0, 8); }
+
+  // Toutes les requetes passent par le proxy local du serveur.
+  function proxyBase() { return `/proxy/${cfg.mode}`; }
+  function backendUrl() { return backends[cfg.mode] || ""; }
 
   const $ = id => document.getElementById(id);
   const feed = $("feed"), input = $("input"), sendBtn = $("send");
@@ -298,7 +306,7 @@
   function syncSettingsUI() {
     document.querySelectorAll("#backendToggle button").forEach(b => b.classList.toggle("active", b.dataset.mode === cfg.mode));
     $("backendNote").innerHTML = BACKEND_NOTES[cfg.mode];
-    $("baseUrl").value = cfg.baseUrl;
+    $("baseUrl").value = backendUrl();
     $("systemPrompt").value = cfg.system;
     $("temp").value = cfg.temp; $("tempVal").textContent = Number(cfg.temp).toFixed(1);
     $("maxTok").value = cfg.maxTok; $("maxTokVal").textContent = cfg.maxTok;
@@ -325,12 +333,9 @@
   document.querySelectorAll("#backendToggle button").forEach(b => {
     b.onclick = () => {
       cfg.mode = b.dataset.mode;
-      if (b.dataset.mode === "openai" && cfg.baseUrl === "http://localhost:11434") cfg.baseUrl = "http://localhost:8000";
-      if (b.dataset.mode === "ollama" && cfg.baseUrl === "http://localhost:8000") cfg.baseUrl = "http://localhost:11434";
       save(); syncSettingsUI(); syncStrip(); fetchModels();
     };
   });
-  $("baseUrl").onchange = e => { cfg.baseUrl = e.target.value.trim().replace(/\/+$/, ""); save(); syncStrip(); fetchModels(); };
   $("systemPrompt").oninput = e => { cfg.system = e.target.value; save(); };
   $("temp").oninput = e => { cfg.temp = parseFloat(e.target.value); $("tempVal").textContent = cfg.temp.toFixed(1); save(); };
   $("maxTok").oninput = e => { cfg.maxTok = parseInt(e.target.value); $("maxTokVal").textContent = cfg.maxTok; save(); };
@@ -339,13 +344,28 @@
   $("refreshModels").onclick = fetchModels;
   $("clearChat").onclick = () => { messages = []; renderFeed(); closeDrawer(); };
 
+  async function loadServerConfig() {
+    try {
+      const r = await fetch("/api/config");
+      if (!r.ok) return;
+      const data = await r.json();
+      if (data.backends) backends = data.backends;
+      // Les defauts du serveur ne s'appliquent que si l'utilisateur n'a rien encore choisi.
+      const stored = load();
+      if (data.defaults) {
+        for (const k of ["mode", "model", "system", "temp", "maxTok"]) {
+          if (stored[k] === undefined && data.defaults[k] !== undefined) cfg[k] = data.defaults[k];
+        }
+      }
+    } catch {}
+  }
+
   async function fetchModels() {
-    const base = cfg.baseUrl;
-    if (!base) return;
+    if (!backendUrl()) return;
     probe.className = "probe busy"; probe.textContent = "connexion…";
     setConn("", "test…");
     $("refreshIcon").classList.add("spin");
-    const url = cfg.mode === "ollama" ? `${base}/api/tags` : `${base}/v1/models`;
+    const url = cfg.mode === "ollama" ? `${proxyBase()}/api/tags` : `${proxyBase()}/v1/models`;
     try {
       const r = await fetch(url, { method: "GET" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -369,7 +389,7 @@
       if (messages.length === 0) renderFeed();
     } catch (err) {
       probe.className = "probe err";
-      probe.textContent = `injoignable (${err.message}) — vérifie URL / CORS`;
+      probe.textContent = `injoignable (${err.message}) — vérifie config.json / le backend`;
       setConn("err", "injoignable");
       $("modelCount").textContent = "";
     } finally {
@@ -487,10 +507,10 @@
 
   function buildRequest(msgs) {
     if (cfg.mode === "ollama") {
-      return { url: `${cfg.baseUrl}/api/chat`,
+      return { url: `${proxyBase()}/api/chat`,
         body: { model: cfg.model, messages: msgs, stream: true, options: { temperature: cfg.temp, num_predict: cfg.maxTok } } };
     }
-    return { url: `${cfg.baseUrl}/v1/chat/completions`,
+    return { url: `${proxyBase()}/v1/chat/completions`,
       body: { model: cfg.model, messages: msgs, stream: true, temperature: cfg.temp, max_tokens: cfg.maxTok } };
   }
 
@@ -533,7 +553,7 @@
       blocks.push(`<pre><div class="pre-head"><span>${esc(lang || "code")}</span>` +
         `<button class="copy" onclick="(function(b){navigator.clipboard&&navigator.clipboard.writeText(b.parentElement.nextElementSibling.textContent);b.textContent='copié';setTimeout(()=>b.textContent='copier',1200)})(this)">copier</button>` +
         `</div><code>${esc(code.replace(/\n$/, ""))}</code></pre>`);
-      return `\u0000B${i}\u0000`;
+      return ` B${i} `;
     });
 
     s = esc(s);
@@ -551,7 +571,7 @@
       else { closeUl(); html += `<p>${ln}</p>`; }
     }
     closeUl();
-    html = html.replace(/<p>\u0000B(\d+)\u0000<\/p>|\u0000B(\d+)\u0000/g, (m, a, b) => blocks[a !== undefined ? a : b]);
+    html = html.replace(/<p> B(\d+) <\/p>| B(\d+) /g, (m, a, b) => blocks[a !== undefined ? a : b]);
     return html;
   }
 
@@ -563,7 +583,7 @@
       e.innerHTML =
         `<div class="sig">${cfg.model ? "PRÊT — " + esc(cfg.model.toUpperCase()) : "PAS DE SIGNAL"}</div>` +
         `<h1>Console de test du modèle</h1>` +
-        `<p>Renseigne le endpoint de l'équipe INFRA dans <code>CONFIG</code>, sélectionne un modèle, puis envoie un prompt. La réponse se stream en direct, la télémétrie s'affiche en bas.</p>`;
+        `<p>Les endpoints sont définis dans <code>config.json</code>. Sélectionne un modèle dans <code>CONFIG</code>, puis envoie un prompt. La réponse se stream en direct, la télémétrie s'affiche en bas.</p>`;
       feed.appendChild(e);
       return;
     }
@@ -582,18 +602,21 @@
     const e = document.createElement("div");
     e.className = "msg";
     e.innerHTML = `<div class="msg-err"><b>Échec de la requête.</b> ${esc(msg)}<br>` +
-      `<span class="sub">Vérifie que le serveur tourne, l'URL de base, et l'autorisation CORS de l'origine.</span></div>`;
+      `<span class="sub">Vérifie que le backend tourne et que son URL est correcte dans <code>config.json</code>.</span></div>`;
     feed.appendChild(e);
     scrollDown();
   }
 
   function scrollDown() { const main = $("main"); main.scrollTop = main.scrollHeight; }
 
-  syncSettingsUI();
-  syncStrip();
-  renderFeed();
-  autosize();
-  if (cfg.baseUrl) fetchModels();
+  (async () => {
+    await loadServerConfig();
+    syncSettingsUI();
+    syncStrip();
+    renderFeed();
+    autosize();
+    if (backendUrl()) fetchModels();
+  })();
 })();
 </script>
 </body>

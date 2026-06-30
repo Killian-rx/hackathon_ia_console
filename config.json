@@ -1,0 +1,17 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8080
+  },
+  "backends": {
+    "ollama": "http://localhost:11434",
+    "openai": "http://localhost:8000"
+  },
+  "defaults": {
+    "mode": "ollama",
+    "model": "",
+    "system": "",
+    "temp": 0.7,
+    "maxTok": 2048
+  }
+}
