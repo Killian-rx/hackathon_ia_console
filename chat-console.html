@@ -226,7 +226,7 @@
 
     <div class="field">
       <label>URL de base</label>
-      <input type="url" id="baseUrl" placeholder="http://10.2.117.10:8080" spellcheck="false" autocapitalize="off">
+      <input type="url" id="baseUrl" placeholder="vide = même serveur (recommandé)" spellcheck="false" autocapitalize="off">
     </div>
 
     <div class="field">
@@ -271,8 +271,12 @@
 (() => {
   "use strict";
 
-  const LS = "inference-console-cfg-v2";
-  const defaults = { mode: "ollama", baseUrl: "http://10.2.117.10:8080", model: "", system: "", temp: 0.7, maxTok: 2048 };
+  const LS = "inference-console-cfg-v3";
+  // baseUrl vide = "même origine que la page" : les requêtes partent en
+  // relatif (/api/*, /v1/*) vers le serveur qui sert la page, qui les relaie
+  // vers le backend d'inférence. Marche par l'IP privée comme par l'URL
+  // publique, sans CORS ni mixed-content.
+  const defaults = { mode: "ollama", baseUrl: "", model: "", system: "", temp: 0.7, maxTok: 2048 };
   let cfg = Object.assign({}, defaults, load());
   let messages = [];
   let controller = null;
@@ -340,8 +344,7 @@
   $("clearChat").onclick = () => { messages = []; renderFeed(); closeDrawer(); };
 
   async function fetchModels() {
-    const base = cfg.baseUrl;
-    if (!base) return;
+    const base = cfg.baseUrl; // "" = même origine (requêtes relatives)
     probe.className = "probe busy"; probe.textContent = "connexion…";
     setConn("", "test…");
     $("refreshIcon").classList.add("spin");
@@ -593,7 +596,7 @@
   syncStrip();
   renderFeed();
   autosize();
-  if (cfg.baseUrl) fetchModels();
+  fetchModels(); // baseUrl vide = même origine, on teste quand même
 })();
 </script>
 </body>

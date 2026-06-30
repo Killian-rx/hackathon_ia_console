@@ -10,12 +10,27 @@ depuis le web. **Aucune dépendance** : uniquement Python 3 standard.
 ## Démarrage rapide
 
 ```bash
-python3 server.py
-# -> http://0.0.0.0:8080/
+python3 server.py --upstream http://localhost:11434
+# -> http://0.0.0.0:8080/   (proxy /api/* et /v1/* vers Ollama)
 ```
 
-Ouvre `http://<ip-de-la-vm>:8080/`, va dans **CONFIG**, renseigne l'URL du
-serveur d'inférence et choisis un modèle.
+Ouvre la page, va dans **CONFIG**, clique sur rafraîchir 🔄 et choisis un
+modèle. C'est tout : pas d'URL à renseigner.
+
+### Pourquoi « pas d'URL à renseigner »
+
+La page appelle **le serveur depuis lequel elle est servie** (requêtes
+relatives `/api/*`, `/v1/*`), et `server.py` relaie vers le backend
+d'inférence. Donc **une seule config marche par les deux portes d'entrée** :
+
+| Tu ouvres la page via…            | Ça marche tel quel |
+|-----------------------------------|--------------------|
+| `http://10.2.117.10:8080/` (privé)| ✅                 |
+| `https://hack-ia01.klouders.fr/` (public) | ✅         |
+
+Pas de CORS, pas de mixed-content, rien à changer selon la porte utilisée.
+Le champ « URL de base » reste **vide** (= même serveur). On ne le remplit
+que pour viser un backend distant exceptionnel.
 
 ## Options
 
@@ -24,25 +39,6 @@ serveur d'inférence et choisis un modèle.
 | `--host` / `HOST`      | `0.0.0.0`     | Interface d'écoute                           |
 | `--port` / `PORT`      | `8080`        | Port d'écoute                                |
 | `--upstream`/`UPSTREAM`| _(désactivé)_ | Backend d'inférence à proxifier (anti-CORS)  |
-
-## CORS : appel direct vs. proxy
-
-La page appelle un backend d'inférence depuis le navigateur. Deux options :
-
-1. **Appel direct** (proxy désactivé) : le navigateur tape l'URL du backend.
-   Il faut alors autoriser l'origine côté backend, ex. lancer Ollama avec
-   `OLLAMA_ORIGINS=*`. Dans CONFIG, l'URL de base est celle du backend
-   (ex. `http://localhost:11434`).
-
-2. **Via le proxy** (recommandé sur VM) : on relaie `/api/*` et `/v1/*`
-   vers le backend, donc plus aucun souci de CORS (même origine).
-
-   ```bash
-   python3 server.py --upstream http://localhost:11434
-   ```
-
-   Dans CONFIG, mets l'URL de base **à l'origine de la page elle-même**
-   (ex. `http://<ip-de-la-vm>:8080`). Le streaming (NDJSON/SSE) est relayé.
 
 ## Déploiement sur VM
 
@@ -81,6 +77,6 @@ HOST=0.0.0.0 PORT=8080 python3 server.py --upstream http://localhost:11434
 ```
 
 Vérifie que le `PORT` correspond à celui vers lequel la passerelle klouders
-redirige. Dans **CONFIG** de la page, mets l'URL de base sur l'URL publique
-`https://hack-ia01.klouders.fr` : les appels passent par la passerelle puis par
-le proxy interne (`/api/*`, `/v1/*`), donc aucun souci de CORS.
+redirige. Comme la page appelle son propre serveur (requêtes relatives), il n'y
+a **rien à renseigner** dans CONFIG : ça marche par l'IP privée comme par l'URL
+publique.
